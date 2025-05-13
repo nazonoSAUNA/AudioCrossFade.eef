@@ -45,11 +45,12 @@ BOOL func_proc(ExEdit::Filter* efp, ExEdit::FilterProcInfo* efpip) {
     }
     efp->aviutl_exfunc->get_audio_filtering(exedit_audio_fp, *reinterpret_cast<AviUtl::EditHandle**>((int)exedit_audio_fp->dll_hinst + 0x1a532c), efpip->frame_num, sub);
     fpi.audiop = sub;
-    int audio_speed = efpip->audio_speed;
+    int audio_speed = efpip->audio_speed, audio_milliframe = efpip->audio_milliframe;
     if (audio_speed == 0) {
         audio_speed = 1000000;
+        audio_milliframe = efpip->frame_num * 1000;
     }
-    if (!exedit_audio_func_main(NULL, &fpi, efp->layer_set, efpip->frame_num - sc_frame, audio_speed, efpip->frame_num * 1000, efp->scene_set, efp->processing)) {
+    if (!exedit_audio_func_main(NULL, &fpi, efp->layer_set, efpip->frame_num - sc_frame, audio_speed, audio_milliframe, efp->scene_set, efp->processing)) {
         return FALSE;
     }
 
