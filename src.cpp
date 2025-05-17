@@ -1,4 +1,4 @@
-#include <windows.h>
+﻿#include <windows.h>
 #include <aviutl.hpp>
 #include <exedit.hpp>
 
@@ -8,31 +8,29 @@ inline static char name[] = "音声クロスフェード";
 inline static short* (__cdecl* create_audio_cache)(ExEdit::ObjectFilterIndex ofi, int size, int func_idx, int fillzero);
 inline static BOOL(__cdecl* exedit_audio_func_main)(AviUtl::FilterPlugin* fp, AviUtl::FilterProcInfo* fpip, int end_layer, int add_frame, int audio_speed, int milliframe, int scene_idx, ExEdit::ObjectFilterIndex ofi);
 
-AviUtl::FilterPlugin* exedit_audio_fp;
+static AviUtl::FilterPlugin* exedit_audio_fp;
+static AviUtl::EditHandle** editpp;
+
 AviUtl::FilterPlugin* get_exedit_audio_fp(ExEdit::Filter* efp) {
     AviUtl::SysInfo si;
     efp->aviutl_exfunc->get_sys_info(NULL, &si);
-
-    for (int i = 0; i < si.filter_n; i++) {
-        auto tfp = efp->aviutl_exfunc->get_filterp(i);
-        if (tfp->information != NULL) {
-            if (!strcmp(tfp->information, "拡張編集(音声) version 0.92 by ＫＥＮくん")) return tfp;
+    for (int i = 0; i < si.filter_n - 1; i++) {
+        if (efp->aviutl_exfunc->get_filterp(i) == efp->exedit_fp) {
+            return efp->aviutl_exfunc->get_filterp(i + 1);
         }
     }
     return NULL;
 }
+
 BOOL func_init(ExEdit::Filter* efp) {
     exedit_audio_fp = get_exedit_audio_fp(efp);
-    if (exedit_audio_fp != NULL) {
-        create_audio_cache = reinterpret_cast<decltype(create_audio_cache)>((int)exedit_audio_fp->dll_hinst + 0x2a8f0);
-        exedit_audio_func_main = reinterpret_cast<decltype(exedit_audio_func_main)>((int)exedit_audio_fp->dll_hinst + 0x49ca0);
-    }
+    editpp = reinterpret_cast<decltype(editpp)>((int)efp->exedit_fp->dll_hinst + 0x1a532c);
+    create_audio_cache = reinterpret_cast<decltype(create_audio_cache)>((int)efp->exedit_fp->dll_hinst + 0x2a8f0);
+    exedit_audio_func_main = reinterpret_cast<decltype(exedit_audio_func_main)>((int)efp->exedit_fp->dll_hinst + 0x49ca0);
     return TRUE;
 }
 
 BOOL func_proc(ExEdit::Filter* efp, ExEdit::FilterProcInfo* efpip) {
-    if (exedit_audio_fp == NULL) return TRUE;
-
     int sc_frame = max(0, efp->frame_start_chain - 1);
 
     AviUtl::FilterProcInfo fpi = *(AviUtl::FilterProcInfo*)efpip;
@@ -43,13 +41,19 @@ BOOL func_proc(ExEdit::Filter* efp, ExEdit::FilterProcInfo* efpip) {
     if (sub == nullptr) {
         return FALSE;
     }
-    efp->aviutl_exfunc->get_audio_filtering(exedit_audio_fp, *reinterpret_cast<AviUtl::EditHandle**>((int)exedit_audio_fp->dll_hinst + 0x1a532c), efpip->frame_num, sub);
+    if (exedit_audio_fp != NULL &&((int)efpip->flag & (int)ExEdit::FilterProcInfo::Flag::nesting) == 0) {
+        efp->aviutl_exfunc->get_audio_filtering(exedit_audio_fp, *editpp, efpip->frame_num, sub);
+    }
     fpi.audiop = sub;
     int audio_speed = efpip->audio_speed;
+    int audio_milliframe;
     if (audio_speed == 0) {
         audio_speed = 1000000;
+        audio_milliframe = efpip->frame_num * 1000;
+    } else {
+        audio_milliframe = efpip->audio_milliframe;
     }
-    if (!exedit_audio_func_main(NULL, &fpi, efp->layer_set, efpip->frame_num - sc_frame, audio_speed, efpip->frame_num * 1000, efp->scene_set, efp->processing)) {
+    if (!exedit_audio_func_main(NULL, &fpi, efp->layer_set, efpip->frame_num - sc_frame, audio_speed, audio_milliframe, efp->scene_set, efp->processing)) {
         return FALSE;
     }
 
